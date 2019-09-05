@@ -4,7 +4,8 @@ import { startOfHour, parseISO, isBefore, format, subHours } from 'date-fns';
 import pt from 'date-fns//locale/pt'
 import Appointment from '../models/Appointment';
 import Notification from '../schemas/notification';
-import Mail from '../../lib/Mail';
+import Queue from '../../lib/Queue';
+import CancellationMail from '../jobs/CancellationMail';
 
 import * as Yup from 'yup';
 
@@ -18,7 +19,7 @@ class AppointmentController {
                 user_id: req.userId,
                 canceled_at: null
             },
-            attributes: ['id', 'date'],
+            attributes: ['id', 'date', 'past', 'cancelable' ],
             limit: 20,
             offset: (page - 1) * 20,
             order: [
@@ -134,11 +135,14 @@ class AppointmentController {
                     model: User,
                     as: 'provider',
                     attributes: ['name', 'email']
+                },
+                {
+                    model: User,
+                    as: 'user',
+                    attributes: ['name']
                 }
             ]
         });
-
-        console.log(appointement)
 
         if (appointement.user_id !== req.userId) {
             return res.status(401).json({
@@ -158,11 +162,7 @@ class AppointmentController {
 
         await appointement.save();
 
-        await Mail.sedMail({
-            to: `${appointement.provider.name} <${appointement.provider.email}>` ,
-            subject: 'Agendamento cancelado',
-            text: 'Você tem um novo cancelamento'
-        })
+        await Queue.add(CancellationMail.key, { appointement });
 
 
         return res.json(appointement);
